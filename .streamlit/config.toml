@@ -1,3 +1,15 @@
+[client]
+showSidebarNavigation = false
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[ui]
+hideTopBar = true
+
 [theme]
 base="light"
 backgroundColor="#f5f5f5"
