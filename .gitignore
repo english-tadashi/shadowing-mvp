@@ -1,0 +1,23 @@
+# OS / Editor
+.DS_Store
+.vscode/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+.DS_Store
+.vscode/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
