@@ -1,191 +1,105 @@
+# app.py
 import streamlit as st
 from streamlit.components.v1 import html
 
 st.set_page_config(page_title="Shadowing MVP", page_icon="🎧", layout="centered")
 st.title("シャドーイング（読み上げ）")
 
-# ====== 表示するテキスト（必要に応じて編集してください） ======
-TEXT = (
-"""It was a bright cold day in April, and the clocks were striking thirteen.
-The classroom was quiet, save for the soft rustle of pages turning. 
-A faint breeze slipped through a narrow window, and the curtains breathed in and out like a calm animal. 
-On the board, someone had written a single question: Why do we speak at all? 
-No one answered. 
-We were busy lining up our pencils and courage.
-
-The teacher nodded, pressed play, and the voice began. 
-It was clear and steady, like a path through a forest. 
-We followed, one step at a time, word after word, testing our balance on each sound. 
-Some words felt smooth, and our tongues slid across them. 
-Others had small stones hidden inside, and our mouths stumbled for a moment. 
-But the voice did not stop, so neither did we.
-
-I watched the second hand sweep, a thin silver scythe. 
-It cut the hour into equal slices and fed them to our nerves. 
-We breathed together. 
-We borrowed the rhythm from the speaker, and the room found a single heartbeat. 
-No one looked up. 
-Even the fluorescent lights seemed to hum in the same key.
-
-Outside, a bus sighed at the corner and pulled away. 
-A sparrow made three short hops along the windowsill and blinked at its reflection. 
-Somewhere down the corridor a locker door clapped shut and then apologized with a soft rattle. 
-April sunlight touched the floor tile by tile, as if counting them. 
-Time, for once, was not our enemy. 
-It was a rope we could hold.
-
-The passage shifted. 
-Now it spoke about ordinary courage: showing up, trying again, speaking even when the first sound is shaky. 
-It said progress is quiet work, like grass growing at night. 
-It said the ear is a patient teacher, and the mouth is a late student who needs extra time. 
-We repeated, and each echo seemed less like an echo and more like our own voice discovering its shoes.
-
-I glanced sideways and saw a profile, steady as a lighthouse. 
-The eyes tracked the words, line by line, never rushing the sea. 
-A strand of hair escaped, drew a question mark in the air, and then settled back into place. 
-We matched the model voice together, a small duet inside a larger choir. 
-No one announced it, but everyone heard it.
-
-Halfway through, the speaker paused for breath, and the silence felt soft, not empty. 
-We held that softness for a beat, then stepped forward again. 
-The new paragraph described a city evening after rain. 
-Streetlights lifted their halos. 
-Sidewalks remembered footsteps. 
-Windows told stories to anyone who looked long enough.
-
-The text did not promise miracles. 
-It promised practice. 
-It promised that a voice grows by walking, not by waiting. 
-It asked us to plant a seed of sound today and water it tomorrow. 
-It warned that some days the soil is stubborn. 
-It reminded us that roots hide their victories until the leaf is ready.
-
-Near the end, the classroom air felt warmer, though the breeze still moved like a quiet hand. 
-I heard my own words arrive almost on time, like a friend who used to be late. 
-The tricky sounds came back, but this time they knocked politely before entering. 
-Even my mistakes seemed honest, like footprints that refuse to lie. 
-I did not chase perfection. 
-I kept a steady step.
-
-The voice slowed with intention, guiding us toward the last lines. 
-It said, speak as if you are leaving a small light for your future self to find. 
-It said, when you cannot believe in skill, believe in rhythm. 
-When you cannot believe in rhythm, believe in breath. 
-And when breath is all you have, let that be enough for one more sentence. 
-We reached the final period.
-
-The teacher looked up. 
-We looked up. 
-The room was the same, yet kinder. 
-Outside, the bus stop waited for its next story. 
-Inside, our mouths remembered a new route home. 
-It was still April. 
-The clocks still chose thirteen. 
-But now the hour felt wide open, and our voices knew where to go."""
-)
-
-
 st.write(
-    "下のボタンを押すと、テキストを読み上げます。"
-    "読み上げ中は現在の単語が強調表示されます。"
-    "もう一度押すと停止します。"
-    "最後まで読み上げたら『最初に戻る』ボタンになります。"
+    "下の『▶ 再生』で読み上げ開始、もう一度で一時停止。"
+    "『↩ 最初に戻る』でいつでもリセットできます。"
+    "⚙（歯車）から **テキスト表示ON/OFF**、**再生速度（0.10〜2.00×）**、"
+    "**声のタイプ（10代/30代/70代 × 男性/女性）**、**難易度（中学生/標準/超難）** を選べます。"
 )
 
-# ====== Web Speech API（ブラウザTTS）で読み上げ＆ハイライト ======
+# --------------------------
+# 3段階の難易度テキスト
+# --------------------------
+TEXTS = {
+    "easy": """It is a bright day in April. The clocks say thirteen. The class is quiet. We sit at our desks. We look at the screen. There is a play button. We press the button. A voice starts. It is clear and slow. We listen and follow.
+    
+We read one word at a time. We do not hurry. We breathe. If we miss a sound, we stop. We try again. Step by step, we get better.
+
+The room is calm. Light comes in from the window. A bus goes by outside. We hear a small bird. Time moves like a slow river. We do not rush.
+
+We say easy words first. We say “a”, “the”, “and”, “is”. Then we say short verbs: “go”, “come”, “see”, “make”, “like”. We join words to make short lines. We read, we listen, we speak.
+
+Some words are hard. That is okay. We pause and try again. We shape the sound with our mouth. We open our mouth for “a”. We smile a little for “i”. We touch our top teeth for “f”. We feel the air for “th”.
+
+We follow the voice. The voice is our guide. We keep the same beat. Like walking, left foot, right foot. One step, then one more. One word, then one more.
+
+The teacher nods. We nod too. We do not need to be perfect. We only need to try. Small steps make a long road. Today we take small steps. That is enough.
+
+We read short lines about a day. The sky is blue. The air is cold. We hold a book. We turn a page. The page is light in our hand.
+
+We say a full sentence now. 
+“It is a bright day in April.” 
+“The classroom is quiet.” 
+“We press play and speak with the voice.” 
+We can say these lines. We can say them well.
+
+Near the end, we slow down. We breathe in and breathe out. We read the last line with care. We stop and smile. We feel a little proud. We know what to do next.
+
+We press play again. We listen again. We speak again. A little stronger, a little clearer. Day by day, our words grow. Step by step, English becomes our friend.""",
+
+    "standard": """It was a bright, cold day in April, and the clocks were striking thirteen. The classroom settled into a careful quiet, the kind born not of fear but of focus. We pressed play, and a steady voice unfurled like a ribbon down the page. We followed word by word, letting the rhythm guide our breath. Some syllables were smooth as glass; others had grit that caught on the tongue. We didn’t hurry. We adjusted, tried again, and let the sentence land.
+
+Shadowing, the text reminded us, is ordinary courage: showing up, repeating, refining. Progress often hides in plain sight, like a seed rooting under dark soil. You won’t hear trumpets. You will feel a new ease when a sound you once dodged suddenly fits. The ear is the patient teacher; the mouth is the late student who eventually arrives.
+
+Outside, a bus exhaled at the curb and pulled away. Sunlight counted tiles across the floor. Someone coughed, then settled. We borrowed the speaker’s cadence, and our scattered timing knit itself into a single pulse. A tricky cluster returned—r after a consonant, a th that wanted to escape—but we met it without drama, pinning it gently in place.
+
+Midway through, the passage painted an evening after rain. Streetlights lifted their halos. Sidewalks carried rumors of footsteps. Windows practiced their soft theater for anyone who cared to watch. We read into the mood and let our voices pick up the hush. Not imitation, exactly—more like harmonizing with a melody we were learning to trust.
+
+In the final paragraph, the voice grew deliberate, as if setting a lantern on each word. Believe in rhythm when you can’t believe in skill. Believe in breath when rhythm deserts you. And when breath is all you have, let it be enough for one more line. We reached the period together. The room felt unchanged and kinder. We looked up, surprised by our own sound. It wasn’t flawless. It was ours, and it was moving forward.""",
+
+    "hard": """On a lucid yet frigid April morning, the clocks insisted upon thirteen, and the hour trembled with a faint sense of misalignment. In the room, silence spread like varnish, deliberate and thin. We depressed the button, and a voice—tempered, unhurried—spiraled outward. We pursued it with deliberate fidelity, harvesting consonants, calibrating vowels, and tolerating the friction that arises wherever articulation and ambition collide.
+
+Shadowing, the passage proposed, is a discipline of increments. No revelation descends; instead, there is an accretion of micro-adjustments—a millimeter of jaw, a degree of tongue, an ounce of breath. The progress is almost subcutaneous, a quiet osmosis by which unfamiliar phonemes acquire residency. The ear becomes curator; the mouth follows as apprentice, sanding roughness from each attempted contour.
+
+Beyond the windows, the city rehearsed its minor symphony: a bus releasing compressed air, a bicycle chain engaging, a newspaper loosened from its twine. Sunlight traversed the floor in precise tessellations, as if auditioning for geometry. Inside, our tempo converged. The difficult cluster returned—a consonant labyrinth that previously undid us—but we resisted melodrama and pursued exactitude. We allowed the cadence to act as metronome and map.
+
+Midway, the text drifted toward images of evening after rain. Sodium lamps coronated intersections; gutters ferried miniature constellations of reflected light. Apartments conversed in murmurs through half-drawn curtains. We matched that atmosphere with restraint, letting sentences land without spectacle. Accuracy first, then ornament, the voice seemed to counsel.
+
+Toward the end, the narration acquired a lucid gravitas. Believe in rhythm when competence wavers. Believe in breath when rhythm thins. And if breath is the last currency, spend it on a single clean line. We approached the terminus with an almost liturgical care, each word set down like a measured stone. Finishing did not feel like triumph so much as alignment: the mouth, at last, cooperating with the ear; the hour, though still labeled thirteen, somehow reconciled with time. We exhaled, not victorious but prepared—for repetition, for refinement, for the quiet work that makes tomorrow sound less foreign than today."""
+}
+
+
+# --------------------------
+# Webコンポーネント（HTML/JS/CSS）
+# --------------------------
 component_html = """
 <style>
-  .wrap {
-    max-height: 440px;          /* 内部スクロール枠 */
-    overflow: auto;
-    border: 1px solid #e3e3e3;
-    border-radius: 10px;
-    background: #f1f1f1;
-  }
+  .wrap { max-height: 440px; overflow: auto; border:1px solid #e3e3e3; border-radius:10px; background:#f1f1f1; }
   .reader {
-    padding: 1rem .9rem 0.5rem;
-    line-height: 2.1rem;
-    font-size: 1.25rem;
-    background-color: #CCCCCC;
-
-    /* 改行と折返し */
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    padding: 1rem .9rem .5rem; line-height: 2.1rem; font-size: 1.25rem; background:#CCC;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
   }
-  .reader.hide-text { visibility: hidden; } /* テキスト非表示 */
-
-  .word {
-    transition: background-color 120ms ease;
-    padding: 2px 1px;
-    border-radius: 4px;
-  }
-  .active { background-color: #fff2a8; }
-
-  /* 下部センター・常時表示のコントロール */
-  .controls {
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
-    padding: 0;                 /* 内側に別レイヤー */
-    background: transparent;
-  }
+  .reader.hide-text { visibility: hidden; }
+  .word { transition: background-color 120ms ease; padding:2px 1px; border-radius:4px; }
+  .active { background:#fff2a8; }
+  .controls { position: sticky; bottom:0; z-index:10; padding:0; background:transparent; }
   .controls-inner {
-    position: relative;         /* 設定パネルの基点 */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: .6rem;
-    padding: .6rem .8rem;
-    background: #ffffffcc;
-    backdrop-filter: blur(4px);
-    border-top: 1px solid #e5e5e5;
+    position: relative; display:flex; justify-content:center; align-items:center; gap:.6rem;
+    padding:.6rem .8rem; background:#ffffffcc; backdrop-filter: blur(4px); border-top:1px solid #e5e5e5;
   }
-  button.ui {
-    padding: .55rem .9rem; border: 1px solid #ccc; border-radius: 8px; cursor: pointer;
-    font-size: 1rem; background: #f7f7f7;
-  }
-  button.ui:hover { background: #efefef; }
-
-  /* 右側の歯車ボタン */
+  button.ui { padding:.55rem .9rem; border:1px solid #ccc; border-radius:8px; cursor:pointer; font-size:1rem; background:#f7f7f7; }
+  button.ui:hover { background:#efefef; }
   .settings-btn {
-    position: absolute;
-    right: .6rem;
-    top: 50%;
-    transform: translateY(-50%);
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 2.2rem; height: 2.2rem;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    background: #f7f7f7;
-    cursor: pointer;
+    position:absolute; right:.6rem; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center; justify-content:center;
+    width:2.2rem; height:2.2rem; border-radius:8px; border:1px solid #ccc; background:#f7f7f7; cursor:pointer;
   }
-  .settings-btn:hover { background: #efefef; }
-  .settings-btn svg { width: 18px; height: 18px; }
-
-  /* 設定パネル */
+  .settings-btn:hover { background:#efefef; } .settings-btn svg { width:18px; height:18px; }
   .settings-panel {
-    position: absolute;
-    right: .6rem;
-    bottom: calc(100% + 8px);
-    min-width: 220px;
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: .75rem;
-    box-shadow: 0 10px 25px rgba(0,0,0,.08);
+    position:absolute; right:.6rem; bottom:calc(100% + 8px); min-width: 300px; background:#fff; border:1px solid #ddd;
+    border-radius:10px; padding:.85rem; box-shadow:0 10px 25px rgba(0,0,0,.08);
   }
-  .hidden { display: none; }
-  .settings-panel .row {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: .5rem; margin: .5rem 0;
-    font-size: .95rem;
-  }
-  .settings-panel .row label { user-select: none; }
-  .settings-panel .desc { font-size: .8rem; color: #666; margin-top: .25rem; }
-  .settings-panel select {
-    padding: .35rem .5rem; border: 1px solid #ccc; border-radius: 6px; background: #fafafa;
-  }
+  .hidden { display:none; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin:.6rem 0; font-size:.95rem; }
+  .col { display:flex; align-items:center; gap:.6rem; width:100%; }
+  .desc { font-size:.8rem; color:#666; margin-top:.25rem; }
+  .rate-wrap { width:100%; display:flex; align-items:center; gap:.6rem; }
+  .rate-wrap input[type="range"] { width:100%; }
+  .rate-value { min-width:3.6rem; text-align:right; font-variant-numeric:tabular-nums; }
 </style>
 
 <div class="wrap" id="wrap">
@@ -198,36 +112,47 @@ component_html = """
 
       <!-- 歯車（設定） -->
       <button id="settingsBtn" class="settings-btn" aria-label="settings" aria-haspopup="true" aria-expanded="false" title="設定">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a7.28,7.28,0,0,0,1.63.94l.38,2.65a.5.5,0,0,0,.49.41h3.4a.5.5,0,0,0,.49-.41l.38-2.65a7.28,7.28,0,0,0,1.63-.94l2.49,1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/>
-        </svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a7.28,7.28,0,0,0,1.63.94l.38,2.65a.5.5,0,0,0,.49.41h3.4a.5.5,0,0,0,.49-.41l.38-2.65a7.28,7.28,0,0,0,1.63-.94l2.49,1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
       </button>
 
       <!-- 設定パネル -->
       <div id="settingsPanel" class="settings-panel hidden" role="dialog" aria-label="設定">
-        <div class="row">
-          <label for="toggleTextChk">テキストを表示</label>
+        <div class="row"><div class="col">
+          <label for="toggleTextChk" style="min-width:5.5rem;">テキスト</label>
           <input id="toggleTextChk" type="checkbox" checked />
-        </div>
-        <div class="row">
-          <label for="rateSelect">再生速度</label>
-          <select id="rateSelect">
-            <option value="0.10">0.10×</option>
-            <option value="0.15">0.15×</option>
-            <option value="0.20">0.20×</option>
-            <option value="0.25">0.25×</option>
-            <option value="0.50">0.50×</option>
-            <option value="0.75">0.75×</option>
-            <option value="0.9">0.90×</option>
-            <option value="1.0" selected>1.00×（標準）</option>
-            <option value="1.1">1.10×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5">1.50×</option>
-            <option value="1.75">1.75×</option>
-            <option value="2.0">2.00×</option>
+          <span style="font-size:.85rem; color:#666;">（表示/非表示）</span>
+        </div></div>
+
+        <div class="row"><div class="col">
+          <label for="difficulty" style="min-width:5.5rem;">難易度</label>
+          <select id="difficulty">
+            <option value="easy">中学生</option>
+            <option value="standard" selected>標準</option>
+            <option value="hard">超難（非日常語）</option>
           </select>
-        </div>
-        <div class="desc">※ 再生中に速度を変えると、現在位置から新速度で再開します。</div>
+        </div></div>
+
+        <div class="row"><div class="col">
+          <label for="voiceProfile" style="min-width:5.5rem;">声のタイプ</label>
+          <select id="voiceProfile">
+            <option value="adult_f" selected>30代 女性</option>
+            <option value="adult_m">30代 男性</option>
+            <option value="teen_f">10代 女性</option>
+            <option value="teen_m">10代 男性</option>
+            <option value="senior_f">70代 女性</option>
+            <option value="senior_m">70代 男性</option>
+          </select>
+        </div></div>
+
+        <div class="row"><div class="col">
+          <label for="rateSlider" style="min-width:5.5rem;">再生速度</label>
+          <div class="rate-wrap">
+            <input id="rateSlider" type="range" min="0.10" max="2.00" step="0.05" value="1.00" />
+            <span id="rateValue" class="rate-value">1.00×</span>
+          </div>
+        </div></div>
+
+        <div class="desc">※ 難易度変更で本文を差し替え、ハイライトを再生成します。<br>※ 端末依存のTTSを使用。年齢感は pitch で擬似表現。</div>
       </div>
     </div>
   </div>
@@ -235,249 +160,169 @@ component_html = """
 
 <script>
 (function() {
-  const original = PLACEHOLDER_TEXT;
+  // 3レベルの本文を埋め込む
+  const TEXTS = {
+    easy:      PLACEHOLDER_EASY,
+    standard:  PLACEHOLDER_STANDARD,
+    hard:      PLACEHOLDER_HARD
+  };
 
-  const wrap        = document.getElementById('wrap');
-  const reader      = document.getElementById('reader');
-  const btn         = document.getElementById('toggleBtn');
-  const rbtn        = document.getElementById('restartBtn');
+  // refs
+  const wrap = document.getElementById('wrap');
+  const reader = document.getElementById('reader');
+  const btn = document.getElementById('toggleBtn');
+  const rbtn = document.getElementById('restartBtn');
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsPop = document.getElementById('settingsPanel');
-  const chkText     = document.getElementById('toggleTextChk');
-  const rateSelect  = document.getElementById('rateSelect');
+  const chkText = document.getElementById('toggleTextChk');
+  const rateSlider = document.getElementById('rateSlider');
+  const rateValue = document.getElementById('rateValue');
+  const voiceSelect = document.getElementById('voiceProfile');
+  const diffSelect = document.getElementById('difficulty');
+
+  // 状態
+  let original = TEXTS[diffSelect.value] || '';
+  let spans = [];
+  let charOffsets = [];
+  let utter = null;
+  let speaking = false, paused = false, finished = false;
+  let currentIdx = -1, baseChar = 0;
+  let rate = 1.0, profile = voiceSelect.value;
+
+  // pitchマップ
+  const PROFILE_PITCH = { teen_f:1.25, teen_m:1.10, adult_f:1.00, adult_m:0.95, senior_f:0.85, senior_m:0.80 };
+
+  // 音声ピック（英語/性別推定）
+  const isEnglish = v => /^en[-_]/i.test(v.lang) || /English/i.test(v.name);
+  const isMaleName = v => /(male|boy|david|mark|michael|john|james|brian|daniel|matt(hew)?|alex|george|tom|peter|sam|ben)/i.test(v.name);
+  const isFemaleName = v => /(female|girl|aria|amy|zoe|zoey|susan|samantha|linda|emma|olivia|jenny|joanna|salli|kimberly|allison|kendra|martha|jessica|hannah|lisa|sarah|katy|heidi)/i.test(v.name);
+  const targetGenderOf = p => /_f$/.test(p) ? 'female' : 'male';
+  function pickVoice(targetGender){
+    const voices = window.speechSynthesis.getVoices();
+    const en = voices.filter(isEnglish);
+    if (!en.length) return voices[0]||null;
+    let cs = targetGender==='female' ? en.filter(isFemaleName) : en.filter(isMaleName);
+    if (!cs.length) cs = en;
+    return cs[0]||voices[0]||null;
+  }
 
   // HTMLエスケープ
-  function escapeHTML(s) {
+  function escapeHTML(s){
     return s.replace(/[&<>"']/g, c => (
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
     ));
   }
 
-  // --- tokenization（単語ごとに span 化、空白/改行/記号も保持） ---
-  let spans = [];
-  let charOffsets = [];
-  (function tokenize() {
+  // トークナイズ（単語span化）
+  function tokenize(text){
+    spans = []; charOffsets = [];
     const re = /(\\w+|\\s+|[^\\w\\s]+)/g;
-    let m; let offset = 0; let html = '';
-    while ((m = re.exec(original)) !== null) {
-      const tk = m[0];
-      const isWord = /\\w+/.test(tk);
-      if (isWord) {
-        const idx = spans.length;
-        html += `<span class="word" data-idx="${idx}">${escapeHTML(tk)}</span>`;
-        charOffsets.push(offset);
-        spans.push(null);
-      } else {
-        html += escapeHTML(tk); // 空白・改行・記号
-      }
+    let m, offset = 0, html = '';
+    while ((m = re.exec(text)) !== null) {
+      const tk = m[0]; const isWord = /\\w+/.test(tk);
+      if (isWord) { const idx = spans.length; html += `<span class="word" data-idx="${idx}">${escapeHTML(tk)}</span>`; charOffsets.push(offset); spans.push(null); }
+      else { html += escapeHTML(tk); }
       offset += tk.length;
     }
     reader.innerHTML = html;
     spans = Array.from(reader.querySelectorAll('.word'));
-  })();
-
-  // --- 状態管理 ---
-  let utter = null;
-  let speaking = false;   // 再生が始まっている（終了まで true）
-  let paused   = false;   // 一時停止中
-  let finished = false;   // 再生完了
-  let currentIdx = -1;    // 現在ハイライト中の単語インデックス
-  let baseChar = 0;       // 現在のUtterance開始位置（original基準の先頭オフセット）
-  let rate = 1.0;         // 再生速度
-
-  function clearActive() { spans.forEach(s => s.classList.remove('active')); }
-
-  // テキスト追従スクロール（表示枠の上から35%位置へ）
-  function scrollToSpan(el) {
-    if (!el) return;
-    const targetTop = el.offsetTop - wrap.clientHeight * 0.35;
-    wrap.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
   }
 
-  // original 先頭からの charIndex でハイライト
-  function highlightByCharIndex(charIndex) {
-    let idx = 0;
-    for (let i = 0; i < charOffsets.length; i++) {
-      if (charIndex >= charOffsets[i]) idx = i; else break;
-    }
-    if (idx !== currentIdx && spans[idx]) {
-      clearActive();
-      spans[idx].classList.add('active');
-      currentIdx = idx;
-      scrollToSpan(spans[idx]);
-    }
+  function clearActive(){ spans.forEach(s=>s.classList.remove('active')); }
+  function scrollToSpan(el){ if(!el) return; const t = el.offsetTop - wrap.clientHeight*0.35; wrap.scrollTo({ top: Math.max(0,t), behavior:'smooth' }); }
+  function highlightByCharIndex(charIndex){
+    let idx=0; for (let i=0;i<charOffsets.length;i++){ if (charIndex>=charOffsets[i]) idx=i; else break; }
+    if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
   }
 
-  function updateToggleLabel() {
-    if (!speaking && !paused && !finished) {
-      btn.textContent = '▶ 再生';
-    } else if (speaking && !paused) {
-      btn.textContent = '⏸ 一時停止';
-    } else if (speaking && paused) {
-      btn.textContent = '▶ 再開';
-    } else if (finished) {
-      btn.textContent = '▶ 再生';
-    }
+  function updateToggleLabel(){
+    if (!speaking && !paused && !finished) btn.textContent='▶ 再生';
+    else if (speaking && !paused) btn.textContent='⏸ 一時停止';
+    else if (speaking && paused) btn.textContent='▶ 再開';
+    else if (finished) btn.textContent='▶ 再生';
   }
 
-  function resetUI() {
-    try { window.speechSynthesis.cancel(); } catch(e) {}
-    speaking = false;
-    paused   = false;
-    finished = false;
-    currentIdx = -1;
-    baseChar = 0;
-    clearActive();
-    wrap.scrollTo({ top: 0, behavior: 'smooth' });
-    updateToggleLabel();
+  function resetUI(){
+    try{ window.speechSynthesis.cancel(); }catch(e){}
+    speaking=false; paused=false; finished=false; currentIdx=-1; baseChar=0;
+    clearActive(); wrap.scrollTo({top:0,behavior:'smooth'}); updateToggleLabel();
   }
 
-  function chooseVoiceFor(utterance) {
-    const voices = window.speechSynthesis.getVoices();
-    const pref = voices.find(v => /en-US/i.test(v.lang) && /female/i.test(v.name)) ||
-                 voices.find(v => /en-US/i.test(v.lang)) || voices[0];
-    if (pref) utterance.voice = pref;
+  function speakFrom(startIdx){
+    const safeIdx = Math.max(0, Math.min(startIdx||0, charOffsets.length-1));
+    baseChar = charOffsets[safeIdx]||0;
+    try{ window.speechSynthesis.cancel(); }catch(e){}
+
+    const u = new SpeechSynthesisUtterance(original.slice(baseChar));
+    utter = u; u.lang='en-US'; u.rate=rate; u.pitch = PROFILE_PITCH[profile] ?? 1.0;
+
+    u.onstart = ()=>{ speaking=true; paused=false; finished=false; updateToggleLabel(); };
+    u.onend   = ()=>{ speaking=false; paused=false; finished=true;  updateToggleLabel(); };
+    u.onerror = ()=>{ speaking=false; paused=false; finished=false; updateToggleLabel(); };
+    u.onboundary = (e)=>{ if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } };
+
+    const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice=v; window.speechSynthesis.speak(u); };
+    if (window.speechSynthesis.getVoices().length===0) window.speechSynthesis.onvoiceschanged = startSpeak; else startSpeak();
   }
 
-  function speakFrom(startIdx) {
-    // startIdx の単語先頭から話し始める
-    const safeIdx = Math.max(0, Math.min(startIdx || 0, charOffsets.length - 1));
-    baseChar = charOffsets[safeIdx] || 0;
+  // 初期レンダリング
+  tokenize(original);
 
-    try { window.speechSynthesis.cancel(); } catch(e) {}
-
-    utter = new SpeechSynthesisUtterance(original.slice(baseChar));
-    utter.lang  = 'en-US';
-    utter.rate  = rate;
-    utter.pitch = 1.0;
-
-    utter.onstart = () => {
-      speaking = true;
-      paused   = false;
-      finished = false;
-      updateToggleLabel();
-    };
-    utter.onend = () => {
-      speaking = false;
-      paused   = false;
-      finished = true;
-      updateToggleLabel();
-    };
-    utter.onerror = () => {
-      speaking = false;
-      paused   = false;
-      finished = false;
-      updateToggleLabel();
-    };
-    utter.onboundary = (e) => {
-      if (e.name === 'word' || e.charIndex >= 0) {
-        const globalChar = baseChar + e.charIndex; // original基準へ戻す
-        highlightByCharIndex(globalChar);
-      }
-    };
-
-    const startSpeak = () => {
-      chooseVoiceFor(utter);
-      window.speechSynthesis.speak(utter);
-    };
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = startSpeak;
-    } else {
-      startSpeak();
-    }
-  }
-
-  // --- ボタン動作 ---
-  btn.addEventListener('click', () => {
-    if (finished) {
-      // 完了後は最初から
-      resetUI();
-      speakFrom(0);
-      return;
-    }
-    if (!speaking && !paused) {
-      // 未再生 → 再生
-      if (currentIdx <= 0) {
-        speakFrom(0);
-      } else {
-        speakFrom(currentIdx);
-      }
-      return;
-    }
-    if (speaking && !paused) {
-      // 再生中 → 一時停止
-      try { window.speechSynthesis.pause(); } catch(e) {}
-      paused = true;
-      updateToggleLabel();
-      return;
-    }
-    if (speaking && paused) {
-      // 一時停止中 → 再開
-      try { window.speechSynthesis.resume(); } catch(e) {}
-      paused = false;
-      updateToggleLabel();
-      return;
-    }
+  // ボタン
+  btn.addEventListener('click', ()=>{
+    if (finished){ resetUI(); speakFrom(0); return; }
+    if (!speaking && !paused){ if (currentIdx<=0) speakFrom(0); else speakFrom(currentIdx); return; }
+    if (speaking && !paused){ try{window.speechSynthesis.pause();}catch(e){} paused=true; updateToggleLabel(); return; }
+    if (speaking && paused){ try{window.speechSynthesis.resume();}catch(e){} paused=false; updateToggleLabel(); return; }
   });
+  rbtn.addEventListener('click', ()=>{ resetUI(); });
 
-  rbtn.addEventListener('click', () => {
-    resetUI(); // いつでも最初に戻す
-  });
-
-  // --- 設定（歯車） ---
-  function toggleSettings(open) {
-    const willOpen = (open === undefined) ? settingsPop.classList.contains('hidden') : open;
-    if (willOpen) {
-      settingsPop.classList.remove('hidden');
-      settingsBtn.setAttribute('aria-expanded', 'true');
-    } else {
-      settingsPop.classList.add('hidden');
-      settingsBtn.setAttribute('aria-expanded', 'false');
-    }
+  // 設定（開閉）
+  function toggleSettings(open){
+    const willOpen = (open===undefined) ? settingsPop.classList.contains('hidden') : open;
+    if (willOpen){ settingsPop.classList.remove('hidden'); settingsBtn.setAttribute('aria-expanded','true'); }
+    else { settingsPop.classList.add('hidden'); settingsBtn.setAttribute('aria-expanded','false'); }
   }
-  settingsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleSettings();
-  });
-  // 外側クリックで閉じる
-  document.addEventListener('click', (e) => {
-    if (!settingsPop.classList.contains('hidden')) {
-      if (!settingsPop.contains(e.target) && e.target !== settingsBtn) {
-        toggleSettings(false);
-      }
-    }
-  });
+  settingsBtn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleSettings(); });
+  document.addEventListener('click', (e)=>{ if(!settingsPop.classList.contains('hidden')){ if(!settingsPop.contains(e.target) && e.target!==settingsBtn){ toggleSettings(false); } } });
 
   // テキスト表示ON/OFF
-  chkText.addEventListener('change', () => {
-    if (chkText.checked) {
-      reader.classList.remove('hide-text');
-    } else {
-      reader.classList.add('hide-text');
-    }
-  });
+  chkText.addEventListener('change', ()=>{ if (chkText.checked) reader.classList.remove('hide-text'); else reader.classList.add('hide-text'); });
 
-  // 再生速度
-  rateSelect.addEventListener('change', () => {
-    rate = Math.min(2.0, Math.max(0.10, parseFloat(rateSelect.value) || 1.0));
-    // 再生中に速度変更 → 現在の単語から新速度で再開
-    if (speaking && !paused) {
-      const restartIdx = (currentIdx >= 0) ? currentIdx : 0;
-      speakFrom(restartIdx);
-    }
+  // 速度
+  function clampRate(v){ const num=parseFloat(v); if (Number.isNaN(num)) return 1.0; return Math.min(2.0, Math.max(0.10, num)); }
+  function renderRateLabel(v){ rateValue.textContent = Number(v).toFixed(2)+'×'; }
+  rate = clampRate(rateSlider.value); renderRateLabel(rate);
+  rateSlider.addEventListener('input', ()=>{ renderRateLabel(clampRate(rateSlider.value)); });
+  rateSlider.addEventListener('change', ()=>{ rate = clampRate(rateSlider.value); renderRateLabel(rate); if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
+
+  // 声タイプ
+  voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
+
+  // 難易度（本文差し替え→再トークナイズ）
+  diffSelect.addEventListener('change', ()=>{
+    const prevWasPlaying = speaking && !paused;
+    resetUI();
+    original = TEXTS[diffSelect.value] || '';
+    tokenize(original);
+    if (prevWasPlaying) speakFrom(0);
   });
 })();
 </script>
 """
 
+# PythonのTEXTSをHTMLに埋め込む
+component_html = (
+    component_html
+    .replace("PLACEHOLDER_EASY", repr(TEXTS["easy"]))
+    .replace("PLACEHOLDER_STANDARD", repr(TEXTS["standard"]))
+    .replace("PLACEHOLDER_HARD", repr(TEXTS["hard"]))
+)
 
-
-# PythonのTEXTを安全に埋め込む
-component_html = component_html.replace("PLACEHOLDER_TEXT", repr(TEXT))
-
+# 描画
 html(component_html, height=480, scrolling=False)
 
 st.caption(
-    "※ ブラウザのWeb Speech APIを利用しています。"
-    "Chromeの最新安定版での利用を推奨します。音声は端末側のTTSエンジンに依存します。"
+    "※ ブラウザのWeb Speech APIを利用しています。Chromeの最新安定版を推奨。"
+    "音声は端末側のTTSエンジン・ボイスに依存します。"
 )
