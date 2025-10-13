@@ -152,7 +152,7 @@ component_html = """
           </div>
         </div></div>
 
-        <div class="desc">※ 難易度変更で本文を差し替え、ハイライトを再生成します。<br>※ 端末依存のTTSを使用。年齢感は pitch で擬似表現。</div>
+        <div class="desc">※ Android 等で単語境界取得ができない場合は、推定速度でハイライトします（フォールバック）。</div>
       </div>
     </div>
   </div>
@@ -160,7 +160,7 @@ component_html = """
 
 <script>
 (function() {
-  // 3レベルの本文を埋め込む
+  // 3レベルの本文（Pythonから埋め込み）
   const TEXTS = {
     easy:      PLACEHOLDER_EASY,
     standard:  PLACEHOLDER_STANDARD,
@@ -188,6 +188,11 @@ component_html = """
   let speaking = false, paused = false, finished = false;
   let currentIdx = -1, baseChar = 0;
   let rate = 1.0, profile = voiceSelect.value;
+
+  // --- Fallback 管理（Android向け） ---
+  let boundaryWorks = false;   // onboundary が来たら true
+  let tick = null;             // 推定タイマー
+  function clearTick(){ if (tick){ clearInterval(tick); tick = null; } }
 
   // pitchマップ
   const PROFILE_PITCH = { teen_f:1.25, teen_m:1.10, adult_f:1.00, adult_m:0.95, senior_f:0.85, senior_m:0.80 };
@@ -230,9 +235,30 @@ component_html = """
 
   function clearActive(){ spans.forEach(s=>s.classList.remove('active')); }
   function scrollToSpan(el){ if(!el) return; const t = el.offsetTop - wrap.clientHeight*0.35; wrap.scrollTo({ top: Math.max(0,t), behavior:'smooth' }); }
+
+  // charIndex（通常ルート）
   function highlightByCharIndex(charIndex){
     let idx=0; for (let i=0;i<charOffsets.length;i++){ if (charIndex>=charOffsets[i]) idx=i; else break; }
     if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
+  }
+  // idx（フォールバック用）
+  function highlightByIndex(idx){
+    idx = Math.max(0, Math.min(idx, spans.length-1));
+    if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
+  }
+  // フォールバック開始（推定WPMで進める）
+  function startFallbackTicker(){
+    if (tick) return;
+    // 英語平均 ~160wpm ≒ 2.6 wps。rate でスケール。最短120msに制限。
+    const wps = Math.max(0.5, 2.6 * rate);
+    const interval = Math.max(120, Math.floor(1000 / wps));
+    let idx = currentIdx >= 0 ? currentIdx : 0;
+    tick = setInterval(() => {
+      if (paused || finished) return;
+      idx = Math.min(idx + 1, spans.length - 1);
+      highlightByIndex(idx);
+      if (idx >= spans.length - 1) clearTick();
+    }, interval);
   }
 
   function updateToggleLabel(){
@@ -245,6 +271,7 @@ component_html = """
   function resetUI(){
     try{ window.speechSynthesis.cancel(); }catch(e){}
     speaking=false; paused=false; finished=false; currentIdx=-1; baseChar=0;
+    boundaryWorks=false; clearTick();
     clearActive(); wrap.scrollTo({top:0,behavior:'smooth'}); updateToggleLabel();
   }
 
@@ -252,17 +279,25 @@ component_html = """
     const safeIdx = Math.max(0, Math.min(startIdx||0, charOffsets.length-1));
     baseChar = charOffsets[safeIdx]||0;
     try{ window.speechSynthesis.cancel(); }catch(e){}
+    boundaryWorks=false; clearTick();
 
     const u = new SpeechSynthesisUtterance(original.slice(baseChar));
     utter = u; u.lang='en-US'; u.rate=rate; u.pitch = PROFILE_PITCH[profile] ?? 1.0;
 
     u.onstart = ()=>{ speaking=true; paused=false; finished=false; updateToggleLabel(); };
-    u.onend   = ()=>{ speaking=false; paused=false; finished=true;  updateToggleLabel(); };
-    u.onerror = ()=>{ speaking=false; paused=false; finished=false; updateToggleLabel(); };
-    u.onboundary = (e)=>{ if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } };
+    u.onend   = ()=>{ speaking=false; paused=false; finished=true;  clearTick(); updateToggleLabel(); };
+    u.onerror = ()=>{ speaking=false; paused=false; finished=false; clearTick(); updateToggleLabel(); };
+
+    u.onboundary = (e)=>{ 
+      boundaryWorks = true; 
+      if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } 
+    };
 
     const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice=v; window.speechSynthesis.speak(u); };
     if (window.speechSynthesis.getVoices().length===0) window.speechSynthesis.onvoiceschanged = startSpeak; else startSpeak();
+
+    // 1秒待っても境界イベントが来なければフォールバック開始
+    setTimeout(()=>{ if (!boundaryWorks && speaking && !paused) startFallbackTicker(); }, 1000);
   }
 
   // 初期レンダリング
@@ -272,8 +307,17 @@ component_html = """
   btn.addEventListener('click', ()=>{
     if (finished){ resetUI(); speakFrom(0); return; }
     if (!speaking && !paused){ if (currentIdx<=0) speakFrom(0); else speakFrom(currentIdx); return; }
-    if (speaking && !paused){ try{window.speechSynthesis.pause();}catch(e){} paused=true; updateToggleLabel(); return; }
-    if (speaking && paused){ try{window.speechSynthesis.resume();}catch(e){} paused=false; updateToggleLabel(); return; }
+    if (speaking && !paused){ 
+      try{window.speechSynthesis.pause();}catch(e){} 
+      paused=true; updateToggleLabel(); clearTick(); 
+      return; 
+    }
+    if (speaking && paused){ 
+      try{window.speechSynthesis.resume();}catch(e){} 
+      paused=false; updateToggleLabel(); 
+      if (!boundaryWorks) startFallbackTicker(); 
+      return; 
+    }
   });
   rbtn.addEventListener('click', ()=>{ resetUI(); });
 
@@ -294,7 +338,11 @@ component_html = """
   function renderRateLabel(v){ rateValue.textContent = Number(v).toFixed(2)+'×'; }
   rate = clampRate(rateSlider.value); renderRateLabel(rate);
   rateSlider.addEventListener('input', ()=>{ renderRateLabel(clampRate(rateSlider.value)); });
-  rateSlider.addEventListener('change', ()=>{ rate = clampRate(rateSlider.value); renderRateLabel(rate); if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
+  rateSlider.addEventListener('change', ()=>{ 
+    rate = clampRate(rateSlider.value); renderRateLabel(rate); 
+    if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} 
+    else if (speaking && paused && !boundaryWorks){ /* 再開時にフォールバック再計算 */ }
+  });
 
   // 声タイプ
   voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
