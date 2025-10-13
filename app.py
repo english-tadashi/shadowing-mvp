@@ -112,7 +112,7 @@ component_html = """
 
       <!-- 歯車（設定） -->
       <button id="settingsBtn" class="settings-btn" aria-label="settings" aria-haspopup="true" aria-expanded="false" title="設定">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a7.28,7.28,0,0,0,1.63.94l.38,2.65a.5.5,0,0,0,.49.41h3.4a.5.5,0,0,0,.49-.41l.38-2.65a7.28,7.28,0,0,0,1.63-.94l2.49,1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
       </button>
 
       <!-- 設定パネル -->
@@ -152,7 +152,7 @@ component_html = """
           </div>
         </div></div>
 
-        <div class="desc">※ Android 等で単語境界取得ができない場合は、推定速度でハイライトします（フォールバック）。</div>
+        <div class="desc">※ Android等で単語境界が取得できない場合は、推定速度でハイライトします（フォールバック）。</div>
       </div>
     </div>
   </div>
@@ -160,12 +160,7 @@ component_html = """
 
 <script>
 (function() {
-  // 3レベルの本文（Pythonから埋め込み）
-  const TEXTS = {
-    easy:      PLACEHOLDER_EASY,
-    standard:  PLACEHOLDER_STANDARD,
-    hard:      PLACEHOLDER_HARD
-  };
+  const TEXTS = { easy: PLACEHOLDER_EASY, standard: PLACEHOLDER_STANDARD, hard: PLACEHOLDER_HARD };
 
   // refs
   const wrap = document.getElementById('wrap');
@@ -180,24 +175,24 @@ component_html = """
   const voiceSelect = document.getElementById('voiceProfile');
   const diffSelect = document.getElementById('difficulty');
 
-  // 状態
+  // state
   let original = TEXTS[diffSelect.value] || '';
-  let spans = [];
-  let charOffsets = [];
+  let spans = [], charOffsets = [];
   let utter = null;
   let speaking = false, paused = false, finished = false;
   let currentIdx = -1, baseChar = 0;
   let rate = 1.0, profile = voiceSelect.value;
+  let resumeIdx = 0; // ← 再開用に覚えておく
 
-  // --- Fallback 管理（Android向け） ---
-  let boundaryWorks = false;   // onboundary が来たら true
-  let tick = null;             // 推定タイマー
-  function clearTick(){ if (tick){ clearInterval(tick); tick = null; } }
+  // Android fallback
+  let boundaryWorks = false;
+  let tick = null;
+  const clearTick = ()=>{ if (tick){ clearInterval(tick); tick=null; } };
 
-  // pitchマップ
+  // pitch map
   const PROFILE_PITCH = { teen_f:1.25, teen_m:1.10, adult_f:1.00, adult_m:0.95, senior_f:0.85, senior_m:0.80 };
 
-  // 音声ピック（英語/性別推定）
+  // voice pick
   const isEnglish = v => /^en[-_]/i.test(v.lang) || /English/i.test(v.name);
   const isMaleName = v => /(male|boy|david|mark|michael|john|james|brian|daniel|matt(hew)?|alex|george|tom|peter|sam|ben)/i.test(v.name);
   const isFemaleName = v => /(female|girl|aria|amy|zoe|zoey|susan|samantha|linda|emma|olivia|jenny|joanna|salli|kimberly|allison|kendra|martha|jessica|hannah|lisa|sarah|katy|heidi)/i.test(v.name);
@@ -211,21 +206,19 @@ component_html = """
     return cs[0]||voices[0]||null;
   }
 
-  // HTMLエスケープ
+  // html escape
   function escapeHTML(s){
-    return s.replace(/[&<>"']/g, c => (
-      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
-    ));
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // トークナイズ（単語span化）
+  // tokenize
   function tokenize(text){
     spans = []; charOffsets = [];
     const re = /(\\w+|\\s+|[^\\w\\s]+)/g;
     let m, offset = 0, html = '';
     while ((m = re.exec(text)) !== null) {
-      const tk = m[0]; const isWord = /\\w+/.test(tk);
-      if (isWord) { const idx = spans.length; html += `<span class="word" data-idx="${idx}">${escapeHTML(tk)}</span>`; charOffsets.push(offset); spans.push(null); }
+      const tk = m[0], isWord = /\\w+/.test(tk);
+      if (isWord) { const idx = spans.length; html += `<span class="word" data-idx="\${idx}">${escapeHTML(tk)}</span>`; charOffsets.push(offset); spans.push(null); }
       else { html += escapeHTML(tk); }
       offset += tk.length;
     }
@@ -235,21 +228,16 @@ component_html = """
 
   function clearActive(){ spans.forEach(s=>s.classList.remove('active')); }
   function scrollToSpan(el){ if(!el) return; const t = el.offsetTop - wrap.clientHeight*0.35; wrap.scrollTo({ top: Math.max(0,t), behavior:'smooth' }); }
-
-  // charIndex（通常ルート）
   function highlightByCharIndex(charIndex){
     let idx=0; for (let i=0;i<charOffsets.length;i++){ if (charIndex>=charOffsets[i]) idx=i; else break; }
     if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
   }
-  // idx（フォールバック用）
   function highlightByIndex(idx){
     idx = Math.max(0, Math.min(idx, spans.length-1));
     if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
   }
-  // フォールバック開始（推定WPMで進める）
   function startFallbackTicker(){
     if (tick) return;
-    // 英語平均 ~160wpm ≒ 2.6 wps。rate でスケール。最短120msに制限。
     const wps = Math.max(0.5, 2.6 * rate);
     const interval = Math.max(120, Math.floor(1000 / wps));
     let idx = currentIdx >= 0 ? currentIdx : 0;
@@ -264,13 +252,13 @@ component_html = """
   function updateToggleLabel(){
     if (!speaking && !paused && !finished) btn.textContent='▶ 再生';
     else if (speaking && !paused) btn.textContent='⏸ 一時停止';
-    else if (speaking && paused) btn.textContent='▶ 再開';
+    else if (!speaking && paused) btn.textContent='▶ 再開';
     else if (finished) btn.textContent='▶ 再生';
   }
 
   function resetUI(){
     try{ window.speechSynthesis.cancel(); }catch(e){}
-    speaking=false; paused=false; finished=false; currentIdx=-1; baseChar=0;
+    speaking=false; paused=false; finished=false; currentIdx=-1; baseChar=0; resumeIdx=0;
     boundaryWorks=false; clearTick();
     clearActive(); wrap.scrollTo({top:0,behavior:'smooth'}); updateToggleLabel();
   }
@@ -282,46 +270,58 @@ component_html = """
     boundaryWorks=false; clearTick();
 
     const u = new SpeechSynthesisUtterance(original.slice(baseChar));
-    utter = u; u.lang='en-US'; u.rate=rate; u.pitch = PROFILE_PITCH[profile] ?? 1.0;
+    utter = u;
+    u.lang = 'en-US';
+    u.rate = rate;
+    u.pitch = PROFILE_PITCH[profile] ?? 1.0;
+    u.volume = 1.0; // ← 無音対策
 
     u.onstart = ()=>{ speaking=true; paused=false; finished=false; updateToggleLabel(); };
-    u.onend   = ()=>{ speaking=false; paused=false; finished=true;  clearTick(); updateToggleLabel(); };
-    u.onerror = ()=>{ speaking=false; paused=false; finished=false; clearTick(); updateToggleLabel(); };
+    u.onend   = ()=>{ speaking=false; finished=true; clearTick(); updateToggleLabel(); };
+    u.onerror = ()=>{ speaking=false; finished=false; clearTick(); updateToggleLabel(); };
 
-    u.onboundary = (e)=>{ 
-      boundaryWorks = true; 
-      if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } 
-    };
+    u.onboundary = (e)=>{ boundaryWorks = true; if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } };
 
-    const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice=v; window.speechSynthesis.speak(u); };
+    const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice = v; window.speechSynthesis.speak(u); };
     if (window.speechSynthesis.getVoices().length===0) window.speechSynthesis.onvoiceschanged = startSpeak; else startSpeak();
 
-    // 1秒待っても境界イベントが来なければフォールバック開始
-    setTimeout(()=>{ if (!boundaryWorks && speaking && !paused) startFallbackTicker(); }, 1000);
+    // 1.2秒待っても境界イベントが来なければフォールバック開始（speaking判定は外す）
+    setTimeout(()=>{ if (!boundaryWorks && !paused && !finished) startFallbackTicker(); }, 1200);
   }
 
-  // 初期レンダリング
+  // init
   tokenize(original);
 
-  // ボタン
+  // buttons
   btn.addEventListener('click', ()=>{
     if (finished){ resetUI(); speakFrom(0); return; }
-    if (!speaking && !paused){ if (currentIdx<=0) speakFrom(0); else speakFrom(currentIdx); return; }
-    if (speaking && !paused){ 
-      try{window.speechSynthesis.pause();}catch(e){} 
-      paused=true; updateToggleLabel(); clearTick(); 
-      return; 
+
+    // 再生前/停止中 → 再生
+    if (!speaking && !paused){
+      const start = currentIdx <= 0 ? 0 : currentIdx;
+      speakFrom(start);
+      return;
     }
-    if (speaking && paused){ 
-      try{window.speechSynthesis.resume();}catch(e){} 
-      paused=false; updateToggleLabel(); 
-      if (!boundaryWorks) startFallbackTicker(); 
-      return; 
+
+    // 再生中 → 「ソフト一時停止」：現在位置を保存して cancel()
+    if (speaking && !paused){
+      resumeIdx = Math.max(0, currentIdx);
+      try{ window.speechSynthesis.cancel(); }catch(e){}
+      paused = true; speaking = false; clearTick(); updateToggleLabel();
+      return;
+    }
+
+    // 一時停止中 → 再開：保存位置から speakFrom()
+    if (!speaking && paused){
+      paused = false; updateToggleLabel();
+      speakFrom(resumeIdx);
+      return;
     }
   });
+
   rbtn.addEventListener('click', ()=>{ resetUI(); });
 
-  // 設定（開閉）
+  // settings (open/close)
   function toggleSettings(open){
     const willOpen = (open===undefined) ? settingsPop.classList.contains('hidden') : open;
     if (willOpen){ settingsPop.classList.remove('hidden'); settingsBtn.setAttribute('aria-expanded','true'); }
@@ -330,34 +330,33 @@ component_html = """
   settingsBtn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleSettings(); });
   document.addEventListener('click', (e)=>{ if(!settingsPop.classList.contains('hidden')){ if(!settingsPop.contains(e.target) && e.target!==settingsBtn){ toggleSettings(false); } } });
 
-  // テキスト表示ON/OFF
+  // toggles
   chkText.addEventListener('change', ()=>{ if (chkText.checked) reader.classList.remove('hide-text'); else reader.classList.add('hide-text'); });
 
-  // 速度
-  function clampRate(v){ const num=parseFloat(v); if (Number.isNaN(num)) return 1.0; return Math.min(2.0, Math.max(0.10, num)); }
-  function renderRateLabel(v){ rateValue.textContent = Number(v).toFixed(2)+'×'; }
+  // rate slider
+  const clampRate = v => Math.min(2.0, Math.max(0.10, parseFloat(v)||1.0));
+  const renderRateLabel = v => rateValue.textContent = Number(v).toFixed(2) + '×';
   rate = clampRate(rateSlider.value); renderRateLabel(rate);
   rateSlider.addEventListener('input', ()=>{ renderRateLabel(clampRate(rateSlider.value)); });
-  rateSlider.addEventListener('change', ()=>{ 
-    rate = clampRate(rateSlider.value); renderRateLabel(rate); 
-    if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} 
-    else if (speaking && paused && !boundaryWorks){ /* 再開時にフォールバック再計算 */ }
+  rateSlider.addEventListener('change', ()=>{
+    rate = clampRate(rateSlider.value); renderRateLabel(rate);
+    if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i); }
   });
 
-  // 声タイプ
+  // voice & difficulty
   voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
-
-  // 難易度（本文差し替え→再トークナイズ）
   diffSelect.addEventListener('change', ()=>{
-    const prevWasPlaying = speaking && !paused;
+    const wasPlaying = speaking && !paused;
+    const savedIdx = Math.max(0, currentIdx);
     resetUI();
     original = TEXTS[diffSelect.value] || '';
     tokenize(original);
-    if (prevWasPlaying) speakFrom(0);
+    if (wasPlaying) speakFrom(0); else currentIdx = savedIdx;
   });
 })();
 </script>
 """
+
 
 # PythonのTEXTSをHTMLに埋め込む
 component_html = (
