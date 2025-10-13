@@ -112,7 +112,7 @@ component_html = """
 
       <!-- 歯車（設定） -->
       <button id="settingsBtn" class="settings-btn" aria-label="settings" aria-haspopup="true" aria-expanded="false" title="設定">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14,12.94a7.49,7.49,0,0,0,.05-.94,7.49,7.49,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.63l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.7,2H10.3a.5.5,0,0,0-.49.41L9.43,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.63L4.94,11.06a7.49,7.49,0,0,0-.05.94,7.49,7.49,0,0,0,.05.94L2.83,14.59a.5.5,0,0,0-.12.63l2,3.46a.5.5,0,0,0,.6.22l2.49-1a7.28,7.28,0,0,0,1.63.94l.38,2.65a.5.5,0,0,0,.49.41h3.4a.5.5,0,0,0,.49-.41l.38-2.65a7.28,7.28,0,0,0,1.63-.94l2.49,1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.63Zm-7.14,2.56A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
       </button>
 
       <!-- 設定パネル -->
@@ -152,7 +152,7 @@ component_html = """
           </div>
         </div></div>
 
-        <div class="desc">※ Android等で単語境界が取得できない場合は、推定速度でハイライトします（フォールバック）。</div>
+        <div class="desc">※ Android などで単語境界が取得できない場合、推定テンポでハイライト＆スクロールします。</div>
       </div>
     </div>
   </div>
@@ -160,6 +160,7 @@ component_html = """
 
 <script>
 (function() {
+  // 3レベルの本文（Python側で埋め込み）
   const TEXTS = { easy: PLACEHOLDER_EASY, standard: PLACEHOLDER_STANDARD, hard: PLACEHOLDER_HARD };
 
   // refs
@@ -182,12 +183,12 @@ component_html = """
   let speaking = false, paused = false, finished = false;
   let currentIdx = -1, baseChar = 0;
   let rate = 1.0, profile = voiceSelect.value;
-  let resumeIdx = 0; // ← 再開用に覚えておく
+  let resumeIdx = 0; // 「一時停止→再開」用の保存位置
 
   // Android fallback
   let boundaryWorks = false;
-  let tick = null;
-  const clearTick = ()=>{ if (tick){ clearInterval(tick); tick=null; } };
+  let tick = null; // setTimeout のID
+  function clearTick(){ if (tick){ clearTimeout(tick); tick = null; } }
 
   // pitch map
   const PROFILE_PITCH = { teen_f:1.25, teen_m:1.10, adult_f:1.00, adult_m:0.95, senior_f:0.85, senior_m:0.80 };
@@ -218,8 +219,14 @@ component_html = """
     let m, offset = 0, html = '';
     while ((m = re.exec(text)) !== null) {
       const tk = m[0], isWord = /\\w+/.test(tk);
-      if (isWord) { const idx = spans.length; html += `<span class="word" data-idx="\${idx}">${escapeHTML(tk)}</span>`; charOffsets.push(offset); spans.push(null); }
-      else { html += escapeHTML(tk); }
+      if (isWord) {
+        const idx = spans.length;
+        html += `<span class="word" data-idx="${idx}">${escapeHTML(tk)}</span>`;
+        charOffsets.push(offset);
+        spans.push(null);
+      } else {
+        html += escapeHTML(tk);
+      }
       offset += tk.length;
     }
     reader.innerHTML = html;
@@ -236,17 +243,51 @@ component_html = """
     idx = Math.max(0, Math.min(idx, spans.length-1));
     if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
   }
+
+  // 直後のテキスト（句読点/改行）のざっくり取得
+  function nextTextAfterSpan(span) {
+    let n = span && span.nextSibling;
+    while (n && n.nodeType !== 3) n = n.nextSibling;
+    return n && n.nodeValue ? n.nodeValue : "";
+  }
+  // 単語長と直後の記号から可変ミリ秒を見積もる
+  function estimateWordMs(idx, rate) {
+    const w = (spans[idx]?.textContent || "").trim();
+    const len = w.length || 1;
+    let lenFactor =
+      len <= 2 ? 0.55 :
+      len <= 4 ? 0.80 :
+      len <= 7 ? 1.00 :
+      len <= 10 ? 1.15 : 1.30;
+
+    const nextTxt = nextTextAfterSpan(spans[idx]);
+    let pause = 0;
+    if (/^\\s*[\\n\\r]/.test(nextTxt)) pause += 280;
+    if (/^\\s*,/.test(nextTxt))        pause += 140;
+    if (/^\\s*[;:]/.test(nextTxt))     pause += 180;
+    if (/^\\s*[.!?]/.test(nextTxt))    pause += 320;
+
+    const base = 320; // ms @ rate=1.0
+    const ms = (base * lenFactor + pause) / Math.max(0.10, rate);
+    return Math.max(90, Math.min(ms, 900));
+  }
+
+  // フォールバック：可変setTimeoutで次語へ進める
   function startFallbackTicker(){
     if (tick) return;
-    const wps = Math.max(0.5, 2.6 * rate);
-    const interval = Math.max(120, Math.floor(1000 / wps));
     let idx = currentIdx >= 0 ? currentIdx : 0;
-    tick = setInterval(() => {
-      if (paused || finished) return;
+
+    const step = () => {
+      if (paused || finished) { tick = null; return; }
       idx = Math.min(idx + 1, spans.length - 1);
       highlightByIndex(idx);
-      if (idx >= spans.length - 1) clearTick();
-    }, interval);
+      if (idx >= spans.length - 1) { tick = null; return; }
+      const nextMs = estimateWordMs(idx, rate);
+      tick = setTimeout(step, nextMs);
+    };
+
+    const firstMs = estimateWordMs(idx, rate);
+    tick = setTimeout(step, firstMs);
   }
 
   function updateToggleLabel(){
@@ -274,7 +315,7 @@ component_html = """
     u.lang = 'en-US';
     u.rate = rate;
     u.pitch = PROFILE_PITCH[profile] ?? 1.0;
-    u.volume = 1.0; // ← 無音対策
+    u.volume = 1.0; // 無音対策
 
     u.onstart = ()=>{ speaking=true; paused=false; finished=false; updateToggleLabel(); };
     u.onend   = ()=>{ speaking=false; finished=true; clearTick(); updateToggleLabel(); };
@@ -285,25 +326,25 @@ component_html = """
     const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice = v; window.speechSynthesis.speak(u); };
     if (window.speechSynthesis.getVoices().length===0) window.speechSynthesis.onvoiceschanged = startSpeak; else startSpeak();
 
-    // 1.2秒待っても境界イベントが来なければフォールバック開始（speaking判定は外す）
-    setTimeout(()=>{ if (!boundaryWorks && !paused && !finished) startFallbackTicker(); }, 1200);
+    // 0.8秒待っても境界が来なければフォールバック開始
+    setTimeout(()=>{ if (!boundaryWorks && !paused && !finished) startFallbackTicker(); }, 800);
   }
 
-  // init
+  // 初期描画
   tokenize(original);
 
-  // buttons
+  // ボタン
   btn.addEventListener('click', ()=>{
     if (finished){ resetUI(); speakFrom(0); return; }
 
-    // 再生前/停止中 → 再生
+    // 未再生/停止中 → 再生
     if (!speaking && !paused){
       const start = currentIdx <= 0 ? 0 : currentIdx;
       speakFrom(start);
       return;
     }
 
-    // 再生中 → 「ソフト一時停止」：現在位置を保存して cancel()
+    // 再生中 → ソフト一時停止（位置保存→cancel）
     if (speaking && !paused){
       resumeIdx = Math.max(0, currentIdx);
       try{ window.speechSynthesis.cancel(); }catch(e){}
@@ -311,7 +352,7 @@ component_html = """
       return;
     }
 
-    // 一時停止中 → 再開：保存位置から speakFrom()
+    // 一時停止中 → 再開
     if (!speaking && paused){
       paused = false; updateToggleLabel();
       speakFrom(resumeIdx);
@@ -321,7 +362,7 @@ component_html = """
 
   rbtn.addEventListener('click', ()=>{ resetUI(); });
 
-  // settings (open/close)
+  // 設定（開閉）
   function toggleSettings(open){
     const willOpen = (open===undefined) ? settingsPop.classList.contains('hidden') : open;
     if (willOpen){ settingsPop.classList.remove('hidden'); settingsBtn.setAttribute('aria-expanded','true'); }
@@ -330,28 +371,33 @@ component_html = """
   settingsBtn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleSettings(); });
   document.addEventListener('click', (e)=>{ if(!settingsPop.classList.contains('hidden')){ if(!settingsPop.contains(e.target) && e.target!==settingsBtn){ toggleSettings(false); } } });
 
-  // toggles
+  // テキスト表示ON/OFF
   chkText.addEventListener('change', ()=>{ if (chkText.checked) reader.classList.remove('hide-text'); else reader.classList.add('hide-text'); });
 
-  // rate slider
+  // 速度
   const clampRate = v => Math.min(2.0, Math.max(0.10, parseFloat(v)||1.0));
   const renderRateLabel = v => rateValue.textContent = Number(v).toFixed(2) + '×';
   rate = clampRate(rateSlider.value); renderRateLabel(rate);
   rateSlider.addEventListener('input', ()=>{ renderRateLabel(clampRate(rateSlider.value)); });
   rateSlider.addEventListener('change', ()=>{
     rate = clampRate(rateSlider.value); renderRateLabel(rate);
-    if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i); }
+    if (speaking && !paused){
+      if (boundaryWorks) {
+        const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);
+      } else {
+        // フォールバック中は次tickから新rateが反映されるので何もしない
+      }
+    }
   });
 
-  // voice & difficulty
+  // 声・難易度
   voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
   diffSelect.addEventListener('change', ()=>{
     const wasPlaying = speaking && !paused;
-    const savedIdx = Math.max(0, currentIdx);
     resetUI();
     original = TEXTS[diffSelect.value] || '';
     tokenize(original);
-    if (wasPlaying) speakFrom(0); else currentIdx = savedIdx;
+    if (wasPlaying) speakFrom(0);
   });
 })();
 </script>
