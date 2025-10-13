@@ -90,16 +90,16 @@ component_html = """
   }
   .settings-btn:hover { background:#efefef; } .settings-btn svg { width:18px; height:18px; }
   .settings-panel {
-    position:absolute; right:.6rem; bottom:calc(100% + 8px); min-width: 300px; background:#fff; border:1px solid #ddd;
+    position:absolute; right:.6rem; bottom:calc(100% + 8px); min-width: 320px; background:#fff; border:1px solid #ddd;
     border-radius:10px; padding:.85rem; box-shadow:0 10px 25px rgba(0,0,0,.08);
   }
   .hidden { display:none; }
   .row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin:.6rem 0; font-size:.95rem; }
   .col { display:flex; align-items:center; gap:.6rem; width:100%; }
   .desc { font-size:.8rem; color:#666; margin-top:.25rem; }
-  .rate-wrap { width:100%; display:flex; align-items:center; gap:.6rem; }
-  .rate-wrap input[type="range"] { width:100%; }
-  .rate-value { min-width:3.6rem; text-align:right; font-variant-numeric:tabular-nums; }
+  .rate-wrap, .gap-wrap { width:100%; display:flex; align-items:center; gap:.6rem; }
+  .rate-wrap input[type="range"], .gap-wrap input[type="range"] { width:100%; }
+  .rate-value, .gap-value { min-width:3.6rem; text-align:right; font-variant-numeric:tabular-nums; }
 </style>
 
 <div class="wrap" id="wrap">
@@ -152,7 +152,15 @@ component_html = """
           </div>
         </div></div>
 
-        <div class="desc">※ Android などで単語境界が取得できない場合、推定テンポでハイライト＆スクロールします。</div>
+        <div class="row"><div class="col">
+          <label for="gapSlider" style="min-width:5.5rem;">文間ポーズ</label>
+          <div class="gap-wrap">
+            <input id="gapSlider" type="range" min="0" max="600" step="50" value="250" />
+            <span id="gapValue" class="gap-value">250ms</span>
+          </div>
+        </div></div>
+
+        <div class="desc">※ 端末で単語境界が取れない場合は推定テンポでハイライトします。文ごとに再生し、文の終わりにポーズを入れます。</div>
       </div>
     </div>
   </div>
@@ -173,17 +181,22 @@ component_html = """
   const chkText = document.getElementById('toggleTextChk');
   const rateSlider = document.getElementById('rateSlider');
   const rateValue = document.getElementById('rateValue');
+  const gapSlider = document.getElementById('gapSlider');
+  const gapValue = document.getElementById('gapValue');
   const voiceSelect = document.getElementById('voiceProfile');
   const diffSelect = document.getElementById('difficulty');
 
   // state
   let original = TEXTS[diffSelect.value] || '';
   let spans = [], charOffsets = [];
+  let sentences = []; // [{start,end,text}]
   let utter = null;
   let speaking = false, paused = false, finished = false;
   let currentIdx = -1, baseChar = 0;
   let rate = 1.0, profile = voiceSelect.value;
-  let resumeIdx = 0; // 「一時停止→再開」用の保存位置
+  let resumeIdx = 0; // 再開位置（単語idx）
+  let sentCursor = 0; // 再生中の文インデックス
+  let sentenceGapMs = 250;
 
   // Android fallback
   let boundaryWorks = false;
@@ -212,7 +225,21 @@ component_html = """
     return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // tokenize
+  // 文分割（終止記号 . ! ? と改行で大まかに）
+  function splitIntoSentences(text){
+    const res = [];
+    let start = 0, m;
+    const re = /[^.!?\\n\\r]+[.!?]?(?:\\s+|$)/g;
+    while ((m = re.exec(text)) !== null) {
+      const seg = m[0];
+      const end = m.index + seg.length;
+      if (seg.trim().length > 0) res.push({ start: m.index, end: end, text: seg });
+    }
+    if (!res.length) res.push({ start: 0, end: text.length, text });
+    return res;
+  }
+
+  // tokenize（単語span化）
   function tokenize(text){
     spans = []; charOffsets = [];
     const re = /(\\w+|\\s+|[^\\w\\s]+)/g;
@@ -231,6 +258,7 @@ component_html = """
     }
     reader.innerHTML = html;
     spans = Array.from(reader.querySelectorAll('.word'));
+    sentences = splitIntoSentences(text);
   }
 
   function clearActive(){ spans.forEach(s=>s.classList.remove('active')); }
@@ -244,13 +272,12 @@ component_html = """
     if (idx!==currentIdx && spans[idx]){ clearActive(); spans[idx].classList.add('active'); currentIdx=idx; scrollToSpan(spans[idx]); }
   }
 
-  // 直後のテキスト（句読点/改行）のざっくり取得
+  // 直後テキスト取得＆可変ディレイ（Android fallback用）
   function nextTextAfterSpan(span) {
     let n = span && span.nextSibling;
     while (n && n.nodeType !== 3) n = n.nextSibling;
     return n && n.nodeValue ? n.nodeValue : "";
   }
-  // 単語長と直後の記号から可変ミリ秒を見積もる
   function estimateWordMs(idx, rate) {
     const w = (spans[idx]?.textContent || "").trim();
     const len = w.length || 1;
@@ -259,24 +286,21 @@ component_html = """
       len <= 4 ? 0.80 :
       len <= 7 ? 1.00 :
       len <= 10 ? 1.15 : 1.30;
-
     const nextTxt = nextTextAfterSpan(spans[idx]);
     let pause = 0;
     if (/^\\s*[\\n\\r]/.test(nextTxt)) pause += 280;
     if (/^\\s*,/.test(nextTxt))        pause += 140;
     if (/^\\s*[;:]/.test(nextTxt))     pause += 180;
     if (/^\\s*[.!?]/.test(nextTxt))    pause += 320;
-
-    const base = 320; // ms @ rate=1.0
+    const base = 320;
     const ms = (base * lenFactor + pause) / Math.max(0.10, rate);
     return Math.max(90, Math.min(ms, 900));
   }
 
-  // フォールバック：可変setTimeoutで次語へ進める
+  // fallback（可変setTimeout）
   function startFallbackTicker(){
     if (tick) return;
     let idx = currentIdx >= 0 ? currentIdx : 0;
-
     const step = () => {
       if (paused || finished) { tick = null; return; }
       idx = Math.min(idx + 1, spans.length - 1);
@@ -285,7 +309,6 @@ component_html = """
       const nextMs = estimateWordMs(idx, rate);
       tick = setTimeout(step, nextMs);
     };
-
     const firstMs = estimateWordMs(idx, rate);
     tick = setTimeout(step, firstMs);
   }
@@ -299,35 +322,58 @@ component_html = """
 
   function resetUI(){
     try{ window.speechSynthesis.cancel(); }catch(e){}
-    speaking=false; paused=false; finished=false; currentIdx=-1; baseChar=0; resumeIdx=0;
+    speaking=false; paused=false; finished=false;
+    currentIdx=-1; baseChar=0; resumeIdx=0; sentCursor=0;
     boundaryWorks=false; clearTick();
     clearActive(); wrap.scrollTo({top:0,behavior:'smooth'}); updateToggleLabel();
   }
 
-  function speakFrom(startIdx){
-    const safeIdx = Math.max(0, Math.min(startIdx||0, charOffsets.length-1));
-    baseChar = charOffsets[safeIdx]||0;
+  // 単語idx → その単語が属する文インデックスを返す
+  function sentenceIndexForWordIdx(widx){
+    const ch = charOffsets[Math.max(0, Math.min(widx, charOffsets.length-1))] || 0;
+    let i = 0;
+    for (; i < sentences.length; i++){
+      if (ch < sentences[i].end) return i;
+    }
+    return sentences.length - 1;
+  }
+
+  // 文ごとに再生（gapを挟みながらシーケンス）
+  function speakSentenceAt(si){
+    if (si < 0 || si >= sentences.length) { speaking=false; finished=true; updateToggleLabel(); return; }
+    sentCursor = si;
+    const seg = sentences[si];
+    baseChar = seg.start;
+
     try{ window.speechSynthesis.cancel(); }catch(e){}
     boundaryWorks=false; clearTick();
 
-    const u = new SpeechSynthesisUtterance(original.slice(baseChar));
+    const u = new SpeechSynthesisUtterance(original.slice(seg.start, seg.end));
     utter = u;
     u.lang = 'en-US';
     u.rate = rate;
     u.pitch = PROFILE_PITCH[profile] ?? 1.0;
-    u.volume = 1.0; // 無音対策
+    u.volume = 1.0;
 
     u.onstart = ()=>{ speaking=true; paused=false; finished=false; updateToggleLabel(); };
-    u.onend   = ()=>{ speaking=false; finished=true; clearTick(); updateToggleLabel(); };
-    u.onerror = ()=>{ speaking=false; finished=false; clearTick(); updateToggleLabel(); };
+    u.onend   = ()=>{
+      speaking=false;
+      if (paused) { updateToggleLabel(); return; } // ポーズ中はここで止める
+      if (si >= sentences.length - 1) {
+        finished = true; updateToggleLabel(); return;
+      }
+      // 文間ポーズ後に次の文へ
+      setTimeout(()=>{ if (!paused) speakSentenceAt(si + 1); }, sentenceGapMs);
+    };
+    u.onerror = ()=>{ speaking=false; updateToggleLabel(); };
 
     u.onboundary = (e)=>{ boundaryWorks = true; if (e.name==='word' || e.charIndex>=0){ highlightByCharIndex(baseChar + e.charIndex); } };
 
     const startSpeak = ()=>{ const v = pickVoice(targetGenderOf(profile)); if (v) u.voice = v; window.speechSynthesis.speak(u); };
     if (window.speechSynthesis.getVoices().length===0) window.speechSynthesis.onvoiceschanged = startSpeak; else startSpeak();
 
-    // 0.8秒待っても境界が来なければフォールバック開始
-    setTimeout(()=>{ if (!boundaryWorks && !paused && !finished) startFallbackTicker(); }, 800);
+    // onboundary来なければフォールバック開始
+    setTimeout(()=>{ if (!boundaryWorks && !paused) startFallbackTicker(); }, 800);
   }
 
   // 初期描画
@@ -335,12 +381,13 @@ component_html = """
 
   // ボタン
   btn.addEventListener('click', ()=>{
-    if (finished){ resetUI(); speakFrom(0); return; }
+    if (finished){ resetUI(); speakSentenceAt(0); return; }
 
     // 未再生/停止中 → 再生
     if (!speaking && !paused){
-      const start = currentIdx <= 0 ? 0 : currentIdx;
-      speakFrom(start);
+      const startWord = currentIdx <= 0 ? 0 : currentIdx;
+      const si = sentenceIndexForWordIdx(startWord);
+      speakSentenceAt(si);
       return;
     }
 
@@ -352,10 +399,11 @@ component_html = """
       return;
     }
 
-    // 一時停止中 → 再開
+    // 一時停止中 → 再開（保存位置の文から）
     if (!speaking && paused){
       paused = false; updateToggleLabel();
-      speakFrom(resumeIdx);
+      const si = sentenceIndexForWordIdx(resumeIdx);
+      speakSentenceAt(si);
       return;
     }
   });
@@ -382,27 +430,34 @@ component_html = """
   rateSlider.addEventListener('change', ()=>{
     rate = clampRate(rateSlider.value); renderRateLabel(rate);
     if (speaking && !paused){
-      if (boundaryWorks) {
-        const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);
-      } else {
-        // フォールバック中は次tickから新rateが反映されるので何もしない
-      }
+      // 進行中の文から設定を反映し直す
+      const si = sentCursor;
+      try{ window.speechSynthesis.cancel(); }catch(e){}
+      speakSentenceAt(si);
     }
   });
 
+  // 文間ポーズ
+  function renderGapLabel(v){ gapValue.textContent = Math.round(v) + 'ms'; }
+  sentenceGapMs = Math.round(parseFloat(gapSlider.value)||250);
+  renderGapLabel(sentenceGapMs);
+  gapSlider.addEventListener('input', ()=>{ renderGapLabel(parseFloat(gapSlider.value)||0); });
+  gapSlider.addEventListener('change', ()=>{
+    sentenceGapMs = Math.round(parseFloat(gapSlider.value)||0);
+  });
+
   // 声・難易度
-  voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const i=(currentIdx>=0)?currentIdx:0; speakFrom(i);} });
+  voiceSelect.addEventListener('change', ()=>{ profile = voiceSelect.value; if (speaking && !paused){ const si = sentCursor; try{ window.speechSynthesis.cancel(); }catch(e){} speakSentenceAt(si);} });
   diffSelect.addEventListener('change', ()=>{
     const wasPlaying = speaking && !paused;
     resetUI();
     original = TEXTS[diffSelect.value] || '';
     tokenize(original);
-    if (wasPlaying) speakFrom(0);
+    if (wasPlaying) speakSentenceAt(0);
   });
 })();
 </script>
 """
-
 
 # PythonのTEXTSをHTMLに埋め込む
 component_html = (
