@@ -1,6 +1,8 @@
+# Streamlit app
 streamlit>=1.37,<2
-google-cloud-texttospeech
 
-streamlit
-google-cloud-texttospeech
-google-auth
+# Google Cloud TTS (+ runtime deps)
+google-cloud-texttospeech==2.17.0
+grpcio>=1.62.2
+protobuf>=4.25.3,<6
+google-auth>=2.23.0
