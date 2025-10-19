@@ -22,5 +22,10 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 
-# secrets（鍵など機密）
+# Google Cloud Text-to-Speech 認証情報 (絶対に公開しないでください)
 secrets/
+.streamlit/secrets.toml
+# *.json # JSONファイルをすべて除外するとtexts.jsonも除外されてしまうため、上記で十分です
+
+# Streamlit キャッシュファイル（Git管理不要）
+.streamlit/cache

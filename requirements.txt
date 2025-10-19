@@ -1,2 +1,6 @@
 streamlit>=1.37,<2
 google-cloud-texttospeech
+
+streamlit
+google-cloud-texttospeech
+google-auth
