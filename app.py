@@ -1,9 +1,10 @@
 # app.py
-# Shadowing MVP — Browser TTS / Google Cloud TTS 切替版（安定版）
-# - data/texts.json と ui/component.html を外部ファイルから読み込み
+# Shadowing MVP — Browser TTS / Google Cloud TTS 切替版（安定・互換）
+# - data/texts.json / ui/component.html を外部ファイルから読み込み
 # - Google Cloud TTS は SSML <mark> の timepoints で正確同期
-# - HTML/XML を適切にエスケープして表示欠落や早期停止を防止
-# - TimepointType の場所が版で異なる問題に対応（_resolve_ssml_mark）
+# - v1 と v1beta1 を自動判定（timepoints対応の方を使用）
+# - HTML/XML のエスケープで表示欠落・早期停止を防止
+# - Secrets は「gcp_json」または「[gcp_service_account_key]」の両方に対応（Streamlit Cloud）
 
 import base64
 import json
@@ -14,16 +15,104 @@ from pathlib import Path
 import streamlit as st
 from streamlit.components.v1 import html
 
-# --- Google Cloud Text-to-Speech は v1 API を明示使用（バージョン差異を吸収） ---
-try:
-    from google.cloud import texttospeech_v1beta1 as tts  # 以降は tts.* を使用
-    _GCTTS_AVAILABLE = True
-except Exception:
-    _GCTTS_AVAILABLE = False
-    tts = None  # type: ignore
+# =========================
+# Secrets / 認証セットアップ
+# =========================
+def setup_gcp_credentials():
+    """
+    優先度:
+    1) 環境変数 GOOGLE_APPLICATION_CREDENTIALS があれば何もしない（ローカル想定）
+    2) st.secrets["gcp_json"] 形式（JSON文字列 or dict）
+    3) st.secrets["gcp_service_account_key"] 形式（TOMLテーブル→dict）
+    どちらでも /tmp にJSONを書き出して環境変数をセット
+    """
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        return
+
+    gcp_payload = None
+    try:
+        # A) gcp_json（JSON文字列 or dict）
+        if "gcp_json" in st.secrets:
+            g = st.secrets["gcp_json"]
+            if isinstance(g, str):
+                try:
+                    gcp_payload = json.loads(g)  # JSON文字列なら dict 化
+                except Exception:
+                    gcp_payload = g             # そのまま文字列で保存
+            else:
+                gcp_payload = dict(g)
+        # B) gcp_service_account_key（TOMLテーブル -> dict）
+        elif "gcp_service_account_key" in st.secrets:
+            g = dict(st.secrets["gcp_service_account_key"])
+            # private_key の \n を実際の改行へ
+            if "private_key" in g and isinstance(g["private_key"], str):
+                g["private_key"] = g["private_key"].replace("\\n", "\n")
+            gcp_payload = g
+    except Exception:
+        gcp_payload = None
+
+    if not gcp_payload:
+        return  # Cloud 側にSecrets未設定ならスルー（ブラウザTTSだけで動く）
+
+    cred_path = "/tmp/gcp-tts-sa.json"
+    with open(cred_path, "w", encoding="utf-8") as f:
+        if isinstance(gcp_payload, str):
+            f.write(gcp_payload)
+        else:
+            json.dump(gcp_payload, f)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+
+setup_gcp_credentials()
 
 # =========================
-# 基本設定
+# Google Cloud TTS import（timepoints 対応モジュールを自動選択）
+# =========================
+_GCTTS_AVAILABLE = True
+
+def _supports_timepoints(mod):
+    try:
+        if hasattr(mod.SynthesizeSpeechRequest, "enable_time_pointing"):
+            return True
+    except Exception:
+        pass
+    try:
+        import importlib
+        ty = importlib.import_module(mod.__name__ + ".types")
+        return hasattr(ty.SynthesizeSpeechRequest, "enable_time_pointing")
+    except Exception:
+        return False
+
+try:
+    from google.cloud import texttospeech_v1 as _tts_v1
+    if _supports_timepoints(_tts_v1):
+        tts = _tts_v1
+        _TTS_VARIANT = "v1"
+    else:
+        from google.cloud import texttospeech_v1beta1 as _tts_v1b
+        if _supports_timepoints(_tts_v1b):
+            tts = _tts_v1b
+            _TTS_VARIANT = "v1beta1"
+        else:
+            _GCTTS_AVAILABLE = False
+            tts = None  # type: ignore
+            _TTS_VARIANT = "none"
+except Exception:
+    try:
+        from google.cloud import texttospeech_v1beta1 as _tts_v1b
+        if _supports_timepoints(_tts_v1b):
+            tts = _tts_v1b
+            _TTS_VARIANT = "v1beta1"
+        else:
+            _GCTTS_AVAILABLE = False
+            tts = None  # type: ignore
+            _TTS_VARIANT = "none"
+    except Exception:
+        _GCTTS_AVAILABLE = False
+        tts = None  # type: ignore
+        _TTS_VARIANT = "none"
+
+# =========================
+# 基本設定 / パス
 # =========================
 st.set_page_config(page_title="Shadowing MVP", page_icon="🎧", layout="centered")
 st.title("シャドーイング（読み上げ）")
@@ -38,7 +127,6 @@ COMPONENT_PATH = UI_DIR / "component.html"
 # ユーティリティ（エスケープ/読み込み）
 # =========================
 def _html_escape(s: str) -> str:
-    """HTML用エスケープ（表示欠落・崩れ防止）"""
     if s is None:
         return ""
     return (
@@ -50,12 +138,10 @@ def _html_escape(s: str) -> str:
     )
 
 def _xml_escape(s: str) -> str:
-    """SSML/XML用エスケープ（早期終了・エラー防止）"""
     return _html_escape(s)
 
 @st.cache_data(show_spinner=False)
 def load_texts() -> dict:
-    """data/texts.json を読み込む"""
     with TEXTS_PATH.open("r", encoding="utf-8") as f:
         data = json.load(f)
     for k in ("easy", "standard", "hard"):
@@ -64,11 +150,10 @@ def load_texts() -> dict:
 
 @st.cache_data(show_spinner=False)
 def load_component_html() -> str:
-    """ui/component.html を読み込む（ブラウザTTS用のHTML/JS）"""
     return COMPONENT_PATH.read_text(encoding="utf-8")
 
 # =========================
-# ブラウザTTS（外部 component.html をそのまま使用）
+# ブラウザTTS（外部 component.html を使用）
 # =========================
 def render_browser_tts(texts: dict, height: int = 520):
     ch = (
@@ -83,8 +168,6 @@ def render_browser_tts(texts: dict, height: int = 520):
 # =========================
 # Google Cloud TTS（SSML <mark>）実装
 # =========================
-
-# ラベル → GCPボイス名 + ピッチ（半音）
 VOICE_MAP = {
     "adult_f":  ("en-US-Neural2-F", 0.0),
     "adult_m":  ("en-US-Neural2-D", 0.0),
@@ -96,7 +179,6 @@ VOICE_MAP = {
 
 def _split_words_for_marks(text: str):
     """
-    timepoints 用に『単語だけ』の並びを作る。
     - tokens: 表示用（空白・改行・句読点を含む）
     - words : SSML <mark> に対応させる単語列
     """
@@ -105,10 +187,6 @@ def _split_words_for_marks(text: str):
     return tokens, words
 
 def _build_ssml_with_marks(words):
-    """
-    単語ごとに <mark name="wXXXX"/> を差し込んだ SSML を構築。
-    生文字は必ず _xml_escape に通す（& < > などを無害化）。
-    """
     parts = ["<speak>"]
     for i, w in enumerate(words):
         parts.append(_xml_escape(w or ""))
@@ -116,28 +194,24 @@ def _build_ssml_with_marks(words):
     parts.append("</speak>")
     return "".join(parts)
 
-def _resolve_ssml_mark():
+def _resolve_ssml_mark_enum():
     """
-    ライブラリ版差を吸収して SSML_MARK の列挙値（または数値）を返す
+    版差を吸収して SSML_MARK の列挙値（または数値）を返す
     """
-    # v1: tts.SynthesizeSpeechRequest.TimepointType.SSML_MARK
     try:
         return tts.SynthesizeSpeechRequest.TimepointType.SSML_MARK  # type: ignore[attr-defined]
     except Exception:
         pass
-    # v1beta1 types 名前空間
     try:
-        from google.cloud.texttospeech_v1beta1.types import SynthesizeSpeechRequest as _SSR
-        return _SSR.TimepointType.SSML_MARK  # type: ignore[attr-defined]
+        mod = __import__(tts.__name__ + ".types", fromlist=["types"])  # type: ignore
+        return mod.SynthesizeSpeechRequest.TimepointType.SSML_MARK  # type: ignore
     except Exception:
         pass
-    # 旧/別系: トップレベルに TimepointType
     try:
         return getattr(tts, "TimepointType").SSML_MARK  # type: ignore[attr-defined]
     except Exception:
         pass
-    # 最後の砦：列挙の値（SSML_MARK は 1）
-    return 1
+    return 1  # 最後の砦（SSML_MARK の値）
 
 @st.cache_data(show_spinner=False)
 def synth_with_timepoints_gcp(
@@ -153,7 +227,7 @@ def synth_with_timepoints_gcp(
         raise RuntimeError("google-cloud-texttospeech が未インストールです。`pip install google-cloud-texttospeech` を実行してください。")
 
     ssml = _build_ssml_with_marks(words)
-    client = tts.TextToSpeechClient()  # v1 クライアント
+    client = tts.TextToSpeechClient()
 
     input_ = tts.SynthesisInput(ssml=ssml)
     voice  = tts.VoiceSelectionParams(language_code="en-US", name=voice_name)
@@ -161,30 +235,31 @@ def synth_with_timepoints_gcp(
         audio_encoding=tts.AudioEncoding.MP3,
         speaking_rate=float(speaking_rate),
         pitch=float(pitch_semitones),
-        # ← ここには入れない（AudioConfig ではない）
     )
 
-    # ★ enable_time_pointing は SynthesizeSpeechRequest 側に渡す
+    # enable_time_pointing は Request 側（AudioConfig ではない）
     request = tts.SynthesizeSpeechRequest(
         input=input_,
         voice=voice,
         audio_config=audio_config,
-        # enable_time_pointing=[_resolve_ssml_mark()], # <-- この行を削除/コメントアウト
+        enable_time_pointing=[_resolve_ssml_mark_enum()],
     )
-    # ↓ インスタンス生成後にプロパティとして設定する
-    request.enable_time_pointing = [_resolve_ssml_mark()]
-
-    resp = client.synthesize_speech(request=request)
+    try:
+        resp = client.synthesize_speech(request=request)
+    except Exception:
+        # 非対応版などの保険（同期なしで合成）
+        resp = client.synthesize_speech(
+            request=tts.SynthesizeSpeechRequest(
+                input=input_, voice=voice, audio_config=audio_config
+            )
+        )
+        st.warning("この環境の google-cloud-texttospeech は timepoints 未対応です。単語同期は無効になります。対応版へアップグレードをご検討ください。")
 
     audio_b64 = base64.b64encode(resp.audio_content).decode("ascii")
-    tps = [{"name": tp.mark_name, "t": tp.time_seconds} for tp in resp.timepoints]
+    tps = [{"name": tp.mark_name, "t": tp.time_seconds} for tp in getattr(resp, "timepoints", [])]
     return audio_b64, tps
 
-
 def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 520):
-    """
-    Cloud TTS 版：<audio> 再生 + timepoints 同期ハイライト
-    """
     tokens, words = _split_words_for_marks(text)
     voice_name, pitch = VOICE_MAP.get(voice_profile, ("en-US-Neural2-F", 0.0))
 
@@ -192,16 +267,16 @@ def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 5
         words=words, voice_name=voice_name, speaking_rate=rate, pitch_semitones=pitch
     )
 
-    # 単語は <span class="w">、空白/改行/句読点はそのまま（ただし必ずエスケープ）
+    # 単語は <span class="w">、空白/改行/句読点はそのまま（必ずエスケープ）
     spans_html_parts = []
     w_idx = 0
     for tk in tokens:
-        if tk.strip() == "":  # 空白・改行
+        if tk.strip() == "":
             spans_html_parts.append(_html_escape(tk).replace("\n", "<br/>"))
         elif tk.isalnum() or (tk and tk[0].isalnum()):
             spans_html_parts.append(f'<span class="w" data-i="{w_idx}">{_html_escape(tk)}</span>')
             w_idx += 1
-        else:  # 句読点など
+        else:
             spans_html_parts.append(_html_escape(tk))
     spans_html = "".join(spans_html_parts)
 
@@ -254,7 +329,6 @@ def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 5
         if (!audio.paused && !audio.ended) requestAnimationFrame(syncTick);
       }}
 
-      // 再生/シーク/速度
       audio.playbackRate = {float(st.session_state.get("cloud_rate", 1.0))};
       audio.addEventListener('play', ()=>{{ cursor=0; requestAnimationFrame(syncTick); }});
       audio.addEventListener('seeking', ()=>{{
@@ -262,7 +336,7 @@ def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 5
         cursor = 0;
         while (cursor < marks.length && marks[cursor][1] < t) cursor++;
       }});
-      audio.addEventListener('ratechange', ()=>{{ /* playbackRate は currentTime に内包 */ }});
+      audio.addEventListener('ratechange', ()=>{{ }});
 
       restartBtn.addEventListener('click', ()=>{{
         audio.pause();
@@ -274,7 +348,7 @@ def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 5
     </script>
     """
     html(cloud_html, height=height, scrolling=False)
-    st.caption("※ Google Cloud TTS（SSML <mark> の timepoints）で正確に単語同期しています。速度は <audio>.playbackRate で即時反映。")
+    st.caption(f"※ Google Cloud TTS（{_TTS_VARIANT} / SSML <mark> timepoints）で正確に単語同期します。速度は <audio>.playbackRate で即時反映。")
 
 # =========================
 # サイドバー（共通UI）
@@ -294,7 +368,7 @@ with st.sidebar:
         format_func=lambda x: x[1],
     )[0]
     rate = st.slider("再生速度", 0.10, 2.00, 1.00, 0.05)
-    st.session_state["cloud_rate"] = rate  # Cloud <audio> に反映
+    st.session_state["cloud_rate"] = rate
     voice_profile = st.selectbox(
         "声のタイプ",
         options=[
@@ -312,7 +386,6 @@ with st.sidebar:
 # =========================
 # 描画本体
 # =========================
-# テキスト読み込み（なければ初期ダミー）
 try:
     texts = load_texts()
 except FileNotFoundError:
@@ -325,22 +398,12 @@ except FileNotFoundError:
 
 st.write("▶ 再生 / ⏸ 一時停止 / ↩ 最初に戻る。⚙（ブラウザTTS側）で **テキスト表示**・**速度**・**声タイプ**・**難易度** を調整できます。")
 
-# app.py (修正後のコード)
-
-# 認証情報の存在をチェックする新しい変数
-# ローカル (環境変数) または Cloud (st.secrets) のいずれかがあればOK
-gcp_auth_ready = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or ("gcp_service_account_key" in st.secrets)
-
 if engine.startswith("Google"):
     if not _GCTTS_AVAILABLE:
         st.error("google-cloud-texttospeech が未インストールです。`pip install google-cloud-texttospeech` を実行してください。")
-    elif not gcp_auth_ready: # <-- 新しい条件に置き換える
-        st.warning(
-            "GOOGLE_APPLICATION_CREDENTIALS が未設定です。サービスアカウント JSON のパスを環境変数で指定してください。 "
-            "または Streamlit Cloud Secrets に 'gcp_service_account_key' (TOML形式) を設定してください。"
-        )
+    elif not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        st.warning("GOOGLE_APPLICATION_CREDENTIALS が未設定です。サービスアカウント JSON のパスを環境変数で指定してください。")
     else:
-        # 認証情報が確認できたので、描画関数を呼び出す
         render_cloud_tts(text=texts.get(difficulty, ""), rate=rate, voice_profile=voice_profile)
 else:
     render_browser_tts(texts)
