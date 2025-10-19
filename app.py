@@ -325,12 +325,22 @@ except FileNotFoundError:
 
 st.write("▶ 再生 / ⏸ 一時停止 / ↩ 最初に戻る。⚙（ブラウザTTS側）で **テキスト表示**・**速度**・**声タイプ**・**難易度** を調整できます。")
 
+# app.py (修正後のコード)
+
+# 認証情報の存在をチェックする新しい変数
+# ローカル (環境変数) または Cloud (st.secrets) のいずれかがあればOK
+gcp_auth_ready = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or ("gcp_service_account_key" in st.secrets)
+
 if engine.startswith("Google"):
     if not _GCTTS_AVAILABLE:
         st.error("google-cloud-texttospeech が未インストールです。`pip install google-cloud-texttospeech` を実行してください。")
-    elif not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        st.warning("GOOGLE_APPLICATION_CREDENTIALS が未設定です。サービスアカウント JSON のパスを環境変数で指定してください。")
+    elif not gcp_auth_ready: # <-- 新しい条件に置き換える
+        st.warning(
+            "GOOGLE_APPLICATION_CREDENTIALS が未設定です。サービスアカウント JSON のパスを環境変数で指定してください。 "
+            "または Streamlit Cloud Secrets に 'gcp_service_account_key' (TOML形式) を設定してください。"
+        )
     else:
+        # 認証情報が確認できたので、描画関数を呼び出す
         render_cloud_tts(text=texts.get(difficulty, ""), rate=rate, voice_profile=voice_profile)
 else:
     render_browser_tts(texts)
