@@ -24,4 +24,3 @@ __pycache__/
 
 # secrets（鍵など機密）
 secrets/
-*.json
