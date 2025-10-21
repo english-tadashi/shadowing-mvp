@@ -65,51 +65,26 @@ def setup_gcp_credentials():
 setup_gcp_credentials()
 
 # =========================
-# Google Cloud TTS import（timepoints 対応モジュールを自動選択）
+# Google Cloud TTS import（インポートできた方を使用）
 # =========================
-_GCTTS_AVAILABLE = True
+_GCTTS_AVAILABLE = False
+_TTS_VARIANT = "none"
 
-def _supports_timepoints(mod):
-    try:
-        if hasattr(mod.SynthesizeSpeechRequest, "enable_time_pointing"):
-            return True
-    except Exception:
-        pass
-    try:
-        import importlib
-        ty = importlib.import_module(mod.__name__ + ".types")
-        return hasattr(ty.SynthesizeSpeechRequest, "enable_time_pointing")
-    except Exception:
-        return False
-
+# v1beta1 を優先（timepoints 対応の可能性が高い）→ だめなら v1
 try:
-    from google.cloud import texttospeech_v1 as _tts_v1
-    if _supports_timepoints(_tts_v1):
-        tts = _tts_v1
-        _TTS_VARIANT = "v1"
-    else:
-        from google.cloud import texttospeech_v1beta1 as _tts_v1b
-        if _supports_timepoints(_tts_v1b):
-            tts = _tts_v1b
-            _TTS_VARIANT = "v1beta1"
-        else:
-            _GCTTS_AVAILABLE = False
-            tts = None  # type: ignore
-            _TTS_VARIANT = "none"
+    from google.cloud import texttospeech_v1beta1 as tts
+    _GCTTS_AVAILABLE = True
+    _TTS_VARIANT = "v1beta1"
 except Exception:
     try:
-        from google.cloud import texttospeech_v1beta1 as _tts_v1b
-        if _supports_timepoints(_tts_v1b):
-            tts = _tts_v1b
-            _TTS_VARIANT = "v1beta1"
-        else:
-            _GCTTS_AVAILABLE = False
-            tts = None  # type: ignore
-            _TTS_VARIANT = "none"
+        from google.cloud import texttospeech_v1 as tts
+        _GCTTS_AVAILABLE = True
+        _TTS_VARIANT = "v1"
     except Exception:
-        _GCTTS_AVAILABLE = False
         tts = None  # type: ignore
+        _GCTTS_AVAILABLE = False
         _TTS_VARIANT = "none"
+
 
 # =========================
 # 基本設定 / パス
@@ -220,9 +195,6 @@ def synth_with_timepoints_gcp(
     speaking_rate: float = 1.0,
     pitch_semitones: float = 0.0,
 ):
-    """
-    Google TTS で音声(MP3)と <mark> の timepoints を取得（同一引数ならキャッシュ）
-    """
     if not _GCTTS_AVAILABLE:
         raise RuntimeError("google-cloud-texttospeech が未インストールです。`pip install google-cloud-texttospeech` を実行してください。")
 
@@ -237,27 +209,27 @@ def synth_with_timepoints_gcp(
         pitch=float(pitch_semitones),
     )
 
-    # enable_time_pointing は Request 側（AudioConfig ではない）
-    request = tts.SynthesizeSpeechRequest(
-        input=input_,
-        voice=voice,
-        audio_config=audio_config,
-        enable_time_pointing=[_resolve_ssml_mark_enum()],
-    )
+    # まずは timepoints 付きで試す（対応版ならこれでOK）
     try:
-        resp = client.synthesize_speech(request=request)
-    except Exception:
-        # 非対応版などの保険（同期なしで合成）
-        resp = client.synthesize_speech(
-            request=tts.SynthesizeSpeechRequest(
-                input=input_, voice=voice, audio_config=audio_config
-            )
+        request = tts.SynthesizeSpeechRequest(
+            input=input_,
+            voice=voice,
+            audio_config=audio_config,
+            enable_time_pointing=[_resolve_ssml_mark_enum()],
         )
-        st.warning("この環境の google-cloud-texttospeech は timepoints 未対応です。単語同期は無効になります。対応版へアップグレードをご検討ください。")
+        resp = client.synthesize_speech(request=request)
+        audio_b64 = base64.b64encode(resp.audio_content).decode("ascii")
+        tps = [{"name": tp.mark_name, "t": tp.time_seconds} for tp in getattr(resp, "timepoints", [])]
+        return audio_b64, tps
+    except Exception:
+        # timepoints 未対応 → timepoints なしでフォールバック
+        resp = client.synthesize_speech(
+            request=tts.SynthesizeSpeechRequest(input=input_, voice=voice, audio_config=audio_config)
+        )
+        st.warning("この google-cloud-texttospeech 版は timepoints 未対応のため、単語同期は無効で再生します。対応版（例: 2.17.0）にアップグレードで改善します。")
+        audio_b64 = base64.b64encode(resp.audio_content).decode("ascii")
+        return audio_b64, []  # timepoints なし
 
-    audio_b64 = base64.b64encode(resp.audio_content).decode("ascii")
-    tps = [{"name": tp.mark_name, "t": tp.time_seconds} for tp in getattr(resp, "timepoints", [])]
-    return audio_b64, tps
 
 def render_cloud_tts(text: str, rate: float, voice_profile: str, height: int = 520):
     tokens, words = _split_words_for_marks(text)
