@@ -3,29 +3,17 @@
 .vscode/
 
 # Python
-venv/
 .venv/
+venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.egg-info/
-.pytest_cache/
 
 # Streamlit
 .streamlit/secrets.toml
-.DS_Store
-.vscode/
-venv/
-.venv/
-__pycache__/
-*.pyc
-.streamlit/secrets.toml
 
-# Google Cloud Text-to-Speech 認証情報 (絶対に公開しないでください)
+# Secrets（絶対に入れない）
 secrets/
-.streamlit/secrets.toml
-# *.json # JSONファイルをすべて除外するとtexts.jsonも除外されてしまうため、上記で十分です
+*.bak
 
-# Streamlit キャッシュファイル（Git管理不要）
-.streamlit/cache
+ディレクトリ構成.txt
+起動.txt
